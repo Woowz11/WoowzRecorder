@@ -3,8 +3,12 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include "WR_Recorder.h"
+#include "WR_SnipAndSketch.h"
+
 HHOOK KeyboardHook;
 std::unordered_set<int> PressedKeys;
+bool TestKeys = true;
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	if (nCode == HC_ACTION) {
@@ -12,19 +16,30 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 			KBDLLHOOKSTRUCT* Key = (KBDLLHOOKSTRUCT*)lParam;
 			PressedKeys.insert(Key->vkCode);
 			
-			if (
-				PressedKeys.find(VK_LSHIFT) != PressedKeys.end() &&
-				PressedKeys.find(VK_LWIN) != PressedKeys.end() &&
-				PressedKeys.find(0x53) != PressedKeys.end()
-				) {
-				std::cout << "LSHIFT + WIN + S" << std::endl;
-			}
+			if (!TestKeys) {
+				if (
+					PressedKeys.find(VK_LSHIFT) != PressedKeys.end() &&
+					PressedKeys.find(VK_LWIN) != PressedKeys.end() &&
+					PressedKeys.find(0x53) != PressedKeys.end()
+					) {
+					WRSTART_SnipAndSketch();
+				}
 
-			if (
-				PressedKeys.find(VK_LMENU) != PressedKeys.end() &&
-				PressedKeys.find(0x5A    ) != PressedKeys.end()
-				) {
-				std::cout << "LALT + Z" << std::endl;
+				if (
+					PressedKeys.find(VK_LMENU) != PressedKeys.end() &&
+					PressedKeys.find(0x5A) != PressedKeys.end()
+					) {
+					WRSTART_Recorder();
+				}
+			}
+			else {
+				if (Key->vkCode == VK_F1) {
+					WRSTART_SnipAndSketch();
+				}
+
+				if (Key->vkCode == VK_F2) {
+					WRSTART_Recorder();
+				}
 			}
 		}
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
