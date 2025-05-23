@@ -8,7 +8,11 @@ HWND Wm;
 
 //==========================================================================================================
 
-struct MonitorInfo { int x, y, w, h; };
+struct MonitorInfo
+{ 
+	int x, y, w, h;
+	HBITMAP Colors;
+};
 std::vector<MonitorInfo> Monitors;
 
 BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
@@ -21,6 +25,22 @@ BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 	return TRUE;
 }
 
+void GetMonitorsColors() {
+	HDC hdcScreen = GetDC(NULL);
+
+	for (auto& m : Monitors) {
+		HDC hdc = CreateCompatibleDC(hdcScreen);
+		m.Colors = CreateCompatibleBitmap(hdcScreen, m.w, m.h);
+		SelectObject(hdc, m.Colors);
+
+		BitBlt(hdc, 0, 0, m.w, m.h, hdcScreen, m.x, m.y, SRCCOPY);
+
+		DeleteDC(hdc);
+	}
+
+	ReleaseDC(NULL, hdcScreen);
+}
+
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void CreateShot() {
 	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SnipAndSketch_Monitors";
@@ -29,10 +49,13 @@ void CreateShot() {
 	wc.lpfnWndProc = WindowProc_Monitors;
 	wc.hInstance = GetModuleHandle(NULL);
 	wc.lpszClassName = CLASS_NAME;
+	wc.hCursor = LoadCursor(NULL, IDC_CROSS);
 
 	RegisterClassW(&wc);
 
+	Monitors.clear();
 	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
+	GetMonitorsColors();
 
 	int TotalW = 0;
 	int MaxH   = 0;
@@ -67,6 +90,27 @@ void ScreenshotToWindow() {
 	SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
+void DrawScreenshot(HWND hwnd) {
+	HDC hdcWindow = GetDC(hwnd);
+	HDC hdc = CreateCompatibleDC(hdcWindow);
+
+	int X = 0;
+	for (const auto& m : Monitors) {
+		HBITMAP Old = (HBITMAP)SelectObject(hdc, m.Colors);
+
+		BITMAP bm;
+		GetObject(m.Colors, sizeof(bm), &bm);
+
+		BitBlt(hdcWindow, X, 0, bm.bmWidth, bm.bmHeight, hdc, 0, 0, SRCCOPY);
+
+		SelectObject(hdc, Old);
+		X += m.w;
+	}
+
+	DeleteDC(hdc);
+	ReleaseDC(hwnd, hdcWindow);
+}
+
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	switch (uMsg) {
 	case WM_DESTROY:
@@ -81,12 +125,7 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 		break;
 	case WM_PAINT:
 	{
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hwnd, &ps);
-		HBRUSH redBrush = CreateSolidBrush(RGB(255, 0, 0));
-		FillRect(hdc, &ps.rcPaint, redBrush);
-		DeleteObject(redBrush);
-		EndPaint(hwnd, &ps);
+		DrawScreenshot(hwnd);
 	}
 	return 0;
 	}
@@ -97,6 +136,7 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND Button_Exit;
+HWND Button_ChangeType;
 void CreateWindow_() {
 	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SnipAndSketch";
 
@@ -110,7 +150,7 @@ void CreateWindow_() {
 	int ScreenW = GetSystemMetrics(SM_CXSCREEN);
 	int ScreenH = GetSystemMetrics(SM_CYSCREEN);
 
-	int WindowW = 100;
+	int WindowW = 200;
 	int WindowH = 100;
 	
 	int X = (ScreenW - WindowW) / 2;
@@ -132,12 +172,24 @@ void CreateWindow_() {
 
 	W = hwnd;
 
+	Button_ChangeType = CreateWindowExW(
+		0,
+		L"BUTTON",
+		L"T",
+		WS_VISIBLE | WS_CHILD,
+		25, 25, 50, 50,
+		hwnd,
+		(HMENU)2,
+		GetModuleHandle(NULL),
+		NULL
+	);
+
 	Button_Exit = CreateWindowExW(
 		0,
 		L"BUTTON",
 		L"X",
 		WS_VISIBLE | WS_CHILD,
-		25, 25, 50, 50,
+		125, 25, 50, 50,
 		hwnd,
 		(HMENU)1,
 		GetModuleHandle(NULL),
@@ -155,6 +207,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			return 0;
 		case WM_COMMAND:
 			if (LOWORD(wParam) == 1) {
+				DestroyWindow(hwnd);
+			}
+			if (LOWORD(wParam) == 2) {
 				DestroyWindow(hwnd);
 			}
 			break;
