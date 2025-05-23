@@ -3,6 +3,8 @@
 #include <vector>
 #include <Windows.h>
 
+bool Created = false;
+
 HWND W;
 HWND Wm;
 
@@ -51,9 +53,11 @@ void CreateShot() {
 	wc.lpszClassName = CLASS_NAME;
 	wc.hCursor = LoadCursor(NULL, IDC_CROSS);
 
-	RegisterClassW(&wc);
+	if (!RegisterClassW(&wc)) {
+		DWORD e = GetLastError();
+		if (e != ERROR_CLASS_ALREADY_EXISTS) { throw std::exception("Failed to register WoowzRecorder_SnipAndSketch_Monitors!"); }
+	}
 
-	Monitors.clear();
 	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
 	GetMonitorsColors();
 
@@ -88,32 +92,47 @@ void ScreenshotToWindow() {
 	ShowWindow(W , SW_SHOW);
 	ShowWindow(Wm, SW_SHOW);
 	SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	UpdateWindow(Wm);
 }
 
-void DrawScreenshot(HWND hwnd) {
-	HDC hdcWindow = GetDC(hwnd);
-	HDC hdc = CreateCompatibleDC(hdcWindow);
-
+void DrawScreenshot(HDC hdcBuffer) {
 	int X = 0;
 	for (const auto& m : Monitors) {
+		HDC hdc = CreateCompatibleDC(hdcBuffer);
 		HBITMAP Old = (HBITMAP)SelectObject(hdc, m.Colors);
 
 		BITMAP bm;
 		GetObject(m.Colors, sizeof(bm), &bm);
 
-		BitBlt(hdcWindow, X, 0, bm.bmWidth, bm.bmHeight, hdc, 0, 0, SRCCOPY);
+		BitBlt(hdcBuffer, X, 0, bm.bmWidth, bm.bmHeight, hdc, 0, 0, SRCCOPY);
 
 		SelectObject(hdc, Old);
 		X += m.w;
-	}
 
-	DeleteDC(hdc);
-	ReleaseDC(hwnd, hdcWindow);
+		DeleteDC(hdc);
+	}
 }
 
+void CopyToClipboard(HBITMAP Image) {
+	if (OpenClipboard(NULL)) {
+		EmptyClipboard();
+		SetClipboardData(CF_BITMAP, Image);
+		CloseClipboard();
+	}
+}
+
+static POINT StartPoint  = { 0,0 };
+static POINT EndPoint    = { 0,0 };
+static bool  IsSelecting = false;
+static RECT  Selection   = { 0,0,0,0 };
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	static HDC hdcBuffer = NULL;
+	static HBITMAP hbmBuffer = NULL;
+	static HBITMAP hbmOldBuffer = NULL;
+
 	switch (uMsg) {
 	case WM_DESTROY:
+		Monitors.clear();
 		DestroyWindow(hwnd);
 		if (W != NULL) { DestroyWindow(W); }
 		Wm = NULL;
@@ -123,11 +142,41 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 		}
 		break;
+	case WM_ERASEBKGND:
+		return TRUE;
 	case WM_PAINT:
-	{
-		DrawScreenshot(hwnd);
-	}
-	return 0;
+		{
+			PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            if (!hdcBuffer) {
+                hdcBuffer = CreateCompatibleDC(hdc);
+                hbmBuffer = CreateCompatibleBitmap(hdc, ps.rcPaint.right, ps.rcPaint.bottom);
+                hbmOldBuffer = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
+            }
+
+            DrawScreenshot(hdcBuffer);
+
+            if (IsSelecting) {
+                HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+                HPEN oPen = (HPEN)SelectObject(hdcBuffer, hPen);
+
+                HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
+                HBRUSH oBrush = (HBRUSH)SelectObject(hdcBuffer, hBrush);
+
+                Rectangle(hdcBuffer, min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1);
+
+                SelectObject(hdcBuffer, oPen);
+                SelectObject(hdcBuffer, oBrush);
+
+                DeleteObject(hPen);
+            }
+
+            BitBlt(hdc, 0, 0, ps.rcPaint.right, ps.rcPaint.bottom, hdcBuffer, 0, 0, SRCCOPY);
+
+            EndPaint(hwnd, &ps);
+		}
+		return 0;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -145,7 +194,10 @@ void CreateWindow_() {
 	wc.hInstance = GetModuleHandle(NULL);
 	wc.lpszClassName = CLASS_NAME;
 
-	RegisterClassW(&wc);
+	if (!RegisterClassW(&wc)) {
+		DWORD e = GetLastError();
+		if (e != ERROR_CLASS_ALREADY_EXISTS) { throw std::exception("Failed to register WoowzRecorder_SnipAndSketch!"); }
+	}
 
 	int ScreenW = GetSystemMetrics(SM_CXSCREEN);
 	int ScreenH = GetSystemMetrics(SM_CYSCREEN);
@@ -171,6 +223,7 @@ void CreateWindow_() {
 	if (hwnd == NULL) { throw std::exception("Failed to create SnipAndSketch window!"); }
 
 	W = hwnd;
+	Created = true;
 
 	Button_ChangeType = CreateWindowExW(
 		0,
@@ -204,6 +257,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			DestroyWindow(hwnd);
 			if (Wm != NULL) { DestroyWindow(Wm); }
 			W = NULL;
+			Created = false;
 			return 0;
 		case WM_COMMAND:
 			if (LOWORD(wParam) == 1) {
@@ -254,9 +308,77 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 //==========================================================================================================
 
+void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
+	if (Created) {
+		MOUSEHOOKSTRUCT* i = (MOUSEHOOKSTRUCT*)l;
+
+		switch (w)
+		{
+			case WM_LBUTTONDOWN:
+				{
+					POINT CurPos;
+					GetCursorPos(&CurPos);
+					HWND hwndUnderCursor = WindowFromPoint(CurPos);
+					if (hwndUnderCursor != W) {
+						IsSelecting = true;
+						StartPoint.x = CurPos.x;
+						StartPoint.y = CurPos.y;
+						EndPoint = StartPoint;
+
+						ShowWindow(W, SW_HIDE);
+					}
+				}
+				break;
+			case WM_MOUSEMOVE:
+				if (IsSelecting) {
+					POINT CurPos;
+					GetCursorPos(&CurPos);
+					EndPoint.x = CurPos.x;
+					EndPoint.y = CurPos.y;
+
+					InvalidateRect(Wm, NULL, FALSE);
+				}
+				break;
+			case WM_LBUTTONUP:
+				if (IsSelecting) {
+					IsSelecting = false;
+
+					Selection.left = min(StartPoint.x, EndPoint.x);
+					Selection.top = min(StartPoint.y, EndPoint.y);
+					Selection.right = max(StartPoint.x, EndPoint.x);
+					Selection.bottom = max(StartPoint.y, EndPoint.y);
+
+					HDC hdcScreen = GetDC(NULL);
+					HDC hdc = CreateCompatibleDC(hdcScreen);
+					HBITMAP Colors = CreateCompatibleBitmap(hdcScreen, Selection.right - Selection.left, Selection.bottom - Selection.top);
+					SelectObject(hdc, Colors);
+
+					BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
+
+					CopyToClipboard(Colors);
+
+					DeleteObject(Colors);
+					DeleteDC(hdc);
+					ReleaseDC(NULL, hdcScreen);
+
+					DestroyWindow(W);
+				}
+				break;
+		}
+	}
+}
+
+//==========================================================================================================
+
+void WREND_SnipAndSketch() {
+	if (Created) {
+		DestroyWindow(W);
+	}
+}
+
 void WRSTART_SnipAndSketch() {
 	try {
-		if (!IsWindow(W)) {
+		if (!Created) {
 			std::cout << "START 'SnipAndSketch'" << std::endl;
 			CreateWindow_();
 			CreateShot();

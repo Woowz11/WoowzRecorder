@@ -6,9 +6,19 @@
 #include "WR_Recorder.h"
 #include "WR_SnipAndSketch.h"
 
+const bool TestKeys = true;
+
+HHOOK MouseHook;
+
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+	if (nCode >= 0) {
+		WR_SnipAndSketch_MousePress(wParam, lParam);
+	}
+	return CallNextHookEx(MouseHook, nCode, wParam, lParam);
+}
+
 HHOOK KeyboardHook;
 std::unordered_set<int> PressedKeys;
-bool TestKeys = true;
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 	if (nCode == HC_ACTION) {
@@ -41,6 +51,10 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 					WRSTART_Recorder();
 				}
 			}
+
+			if (Key->vkCode == VK_LWIN) {
+				WREND_SnipAndSketch();
+			}
 		}
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
 			KBDLLHOOKSTRUCT* Key = (KBDLLHOOKSTRUCT*)lParam;
@@ -53,8 +67,12 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 void StartDetect() {
 	KeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
 	if (KeyboardHook == NULL) { throw std::exception("KeyboardHook failed to set!"); }
+
+	MouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, NULL, 0);
+	if (MouseHook == NULL) { throw std::exception("MouseHook failed to set!"); }
 }
 
 void EndDetect() {
-	UnhookWindowsHookEx(KeyboardHook);
+	if (MouseHook    != NULL) { UnhookWindowsHookEx(MouseHook   ); MouseHook    = NULL; }
+	if (KeyboardHook != NULL) { UnhookWindowsHookEx(KeyboardHook); KeyboardHook = NULL; }
 }
