@@ -1,12 +1,104 @@
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 #include <Windows.h>
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND W;
+HWND Wm;
+
+//==========================================================================================================
+
+struct MonitorInfo { int x, y, w, h; };
+std::vector<MonitorInfo> Monitors;
+
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+	MonitorInfo i;
+	i.x = lprcMonitor->left;
+	i.y = lprcMonitor->top;
+	i.w = lprcMonitor->right - lprcMonitor->left;
+	i.h = lprcMonitor->bottom - lprcMonitor->top;
+	Monitors.push_back(i);
+	return TRUE;
+}
+
+LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void CreateShot() {
+	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SnipAndSketch_Monitors";
+
+	WNDCLASSW wc = {};
+	wc.lpfnWndProc = WindowProc_Monitors;
+	wc.hInstance = GetModuleHandle(NULL);
+	wc.lpszClassName = CLASS_NAME;
+
+	RegisterClassW(&wc);
+
+	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
+
+	int TotalW = 0;
+	int MaxH   = 0;
+
+	for (const auto& m : Monitors) {
+		TotalW += m.w;
+		if (m.h > MaxH) {
+			MaxH = m.h;
+		}
+	}
+
+	HWND hwnd = CreateWindowEx(
+		WS_EX_TOPMOST,
+		CLASS_NAME,
+		L"",
+		WS_POPUP,
+		0, 0, TotalW, MaxH,
+		NULL,
+		NULL,
+		GetModuleHandle(NULL),
+		NULL
+	);
+
+	if(hwnd == NULL) { throw std::exception("Failed to create SnipAndSketch Monitors window!"); }
+
+	Wm = hwnd;
+}
+
+void ScreenshotToWindow() {
+	ShowWindow(W , SW_SHOW);
+	ShowWindow(Wm, SW_SHOW);
+	SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+}
+
+LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	switch (uMsg) {
+	case WM_DESTROY:
+		DestroyWindow(hwnd);
+		if (W != NULL) { DestroyWindow(W); }
+		Wm = NULL;
+		return 0;
+	case WM_ACTIVATE:
+		if (LOWORD(wParam) != WA_INACTIVE) {
+			SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		}
+		break;
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(hwnd, &ps);
+		HBRUSH redBrush = CreateSolidBrush(RGB(255, 0, 0));
+		FillRect(hdc, &ps.rcPaint, redBrush);
+		DeleteObject(redBrush);
+		EndPaint(hwnd, &ps);
+	}
+	return 0;
+	}
+	return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+//==========================================================================================================
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND Button_Exit;
 void CreateWindow_() {
-	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SniAndSketch";
+	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SnipAndSketch";
 
 	WNDCLASSW wc = {};
 	wc.lpfnWndProc = WindowProc;
@@ -51,8 +143,6 @@ void CreateWindow_() {
 		GetModuleHandle(NULL),
 		NULL
 	);
-
-	ShowWindow(hwnd, SW_SHOW);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -60,6 +150,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	{
 		case WM_DESTROY:
 			DestroyWindow(hwnd);
+			if (Wm != NULL) { DestroyWindow(Wm); }
 			W = NULL;
 			return 0;
 		case WM_COMMAND:
@@ -106,11 +197,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	}return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
+//==========================================================================================================
+
 void WRSTART_SnipAndSketch() {
 	try {
 		if (!IsWindow(W)) {
 			std::cout << "START 'SnipAndSketch'" << std::endl;
 			CreateWindow_();
+			CreateShot();
+			ScreenshotToWindow();
+		}
+		else {
+			DestroyWindow(W);
 		}
 	}
 	catch (std::exception e) {
