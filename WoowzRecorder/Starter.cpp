@@ -7,6 +7,9 @@
 const std::string Version = "0.0";
 
 static void Start() {
+	HWND ConsoleWindow = GetConsoleWindow();
+	ShowWindow(ConsoleWindow, SW_HIDE);
+
 	std::cout << "WoowzRecorder " << Version << std::endl;
 	StartDetect();
 }

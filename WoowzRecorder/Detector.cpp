@@ -8,6 +8,8 @@
 
 const bool TestKeys = false;
 
+bool ConsoleVisible = false;
+
 HHOOK MouseHook;
 
 LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -27,7 +29,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 			PressedKeys.insert(Key->vkCode);
 			
 			if (!TestKeys) {
-				if (
+				if ( // LSHIFT + LWIN + S
 					PressedKeys.find(VK_LSHIFT) != PressedKeys.end() &&
 					PressedKeys.find(VK_LWIN) != PressedKeys.end() &&
 					PressedKeys.find(0x53) != PressedKeys.end()
@@ -35,7 +37,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 					WRSTART_SnipAndSketch();
 				}
 
-				if (
+				if ( // LALT + Z
 					PressedKeys.find(VK_LMENU) != PressedKeys.end() &&
 					PressedKeys.find(0x5A) != PressedKeys.end()
 					) {
@@ -58,6 +60,15 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 			if (Key->vkCode == VK_LWIN || Key->vkCode == VK_SPACE) {
 				WREND_SnipAndSketch();
+			}
+
+			if ( // W + R
+				PressedKeys.find(0x57) != PressedKeys.end() &&
+				PressedKeys.find(0x52) != PressedKeys.end()
+				) {
+				HWND ConsoleWindow = GetConsoleWindow();
+				ConsoleVisible = !ConsoleVisible;
+				ShowWindow(ConsoleWindow, ConsoleVisible ? SW_SHOW : SW_HIDE);
 			}
 		}
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {

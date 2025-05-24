@@ -13,6 +13,11 @@ HWND Wm;
 
 //==========================================================================================================
 
+static POINT StartPoint = { 0,0 };
+static POINT EndPoint = { 0,0 };
+static bool  IsSelecting = false;
+static RECT  Selection = { 0,0,0,0 };
+
 struct MonitorInfo
 { 
 	int x, y, w, h;
@@ -48,6 +53,10 @@ void GetMonitorsColors() {
 
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void CreateShot() {
+	IsSelecting = false;
+	StartPoint = { 0,0 };
+	EndPoint = { 0,0 };
+
 	const wchar_t CLASS_NAME[] = L"WoowzRecorder_SnipAndSketch_Monitors";
 
 	WNDCLASSW wc = {};
@@ -206,10 +215,6 @@ void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
 	DeleteDC(hdcMem);
 }
 
-static POINT StartPoint  = { 0,0 };
-static POINT EndPoint    = { 0,0 };
-static bool  IsSelecting = false;
-static RECT  Selection   = { 0,0,0,0 };
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static HDC hdcBuffer = NULL;
 	static HBITMAP hbmBuffer = NULL;
@@ -482,7 +487,8 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 						Selection.bottom = max(StartPoint.y, EndPoint.y);
 
 						if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
-							WR_SnipAndSketch_Cancel();
+							ShowWindow(W, SW_SHOW);
+							InvalidateRect(Wm, NULL, TRUE);
 							break;
 						}
 
@@ -494,6 +500,7 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 						BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
 
 						CopyToClipboard(Colors);
+						std::cout << "Copied!" << std::endl;
 
 						DeleteObject(Colors);
 						DeleteDC(hdc);
