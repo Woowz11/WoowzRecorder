@@ -52,7 +52,11 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 
-			if (Key->vkCode == VK_LWIN) {
+			if (Key->vkCode == VK_ESCAPE) {
+				WR_SnipAndSketch_Cancel();
+			}
+
+			if (Key->vkCode == VK_LWIN || Key->vkCode == VK_SPACE) {
 				WREND_SnipAndSketch();
 			}
 		}

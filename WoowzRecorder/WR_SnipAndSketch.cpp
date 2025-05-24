@@ -1,6 +1,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <sstream>
+#include <string>
 #include <Windows.h>
 #include <intrin.h>
 
@@ -245,7 +247,8 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
 				HBRUSH oBrush = (HBRUSH)SelectObject(hdcBuffer, hBrush);
 
-				Rectangle(hdcBuffer, min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1);
+				RECT rcInside = { min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1 };
+				Rectangle(hdcBuffer, rcInside.left, rcInside.top, rcInside.right, rcInside.bottom);
 
 				SelectObject(hdcBuffer, oPen);
 				SelectObject(hdcBuffer, oBrush);
@@ -253,12 +256,35 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				SetROP2(hdcBuffer, R2_COPYPEN);
 
 				RECT rcOutside = ps.rcPaint;
-				RECT rcInside = { min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1 };
 
 				DrawSemiTransparentRect(hdcBuffer, rcOutside.left , rcOutside.top   , rcInside .left  - rcOutside.left , rcOutside.bottom - rcOutside.top   );
 				DrawSemiTransparentRect(hdcBuffer, rcInside .right, rcOutside.top   , rcOutside.right - rcInside .right, rcOutside.bottom - rcOutside.top   );
 				DrawSemiTransparentRect(hdcBuffer, rcInside .left , rcOutside.top   , rcInside .right - rcInside .left , rcInside .top    - rcOutside.top   );
 				DrawSemiTransparentRect(hdcBuffer, rcInside .left , rcInside .bottom, rcInside .right - rcInside .left , rcOutside.bottom - rcInside .bottom);
+
+				int borderWidth = rcInside.right - rcInside.left - 2;
+				int borderHeight = rcInside.bottom - rcInside.top - 2;
+
+				std::wostringstream widthStream;
+				widthStream << borderWidth << L" px";
+				std::wstring widthText = widthStream.str();
+
+				std::wostringstream heightStream;
+				heightStream << borderHeight << L" px";
+				std::wstring heightText = heightStream.str();
+
+				SIZE textSizeWidth, textSizeHeight;
+				GetTextExtentPoint32(hdcBuffer, widthText.c_str(), widthText.length(), &textSizeWidth);
+				GetTextExtentPoint32(hdcBuffer, heightText.c_str(), heightText.length(), &textSizeHeight);
+
+				int textXHeight = rcInside.right + 10;
+				int textYHeight = rcInside.top + (rcInside.bottom - rcInside.top) / 2 - textSizeHeight.cy / 2;
+
+				int textXWidth = rcInside.left + (rcInside.right - rcInside.left) / 2 - textSizeWidth.cx / 2;
+				int textYWidth = rcInside.bottom + 10;
+
+				TextOut(hdcBuffer, textXHeight, textYHeight, heightText.c_str(), heightText.length());
+				TextOut(hdcBuffer, textXWidth , textYWidth , widthText .c_str(), widthText .length());
 			} else {
 				DrawSemiTransparentRect(hdcBuffer, 0, 0, ps.rcPaint.right, ps.rcPaint.bottom);
 			}
@@ -399,6 +425,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 //==========================================================================================================
 
+void WR_SnipAndSketch_Cancel() {
+	if (Created) {
+		if (IsSelecting) {
+			IsSelecting = false;
+			ShowWindow(W, SW_SHOW);
+			InvalidateRect(Wm, NULL, TRUE);
+		}
+	}
+}
+
 void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 	if (Created) {
 		MOUSEHOOKSTRUCT* i = (MOUSEHOOKSTRUCT*)l;
@@ -410,7 +446,7 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 					POINT CurPos;
 					GetCursorPos(&CurPos);
 					HWND hwndUnderCursor = WindowFromPoint(CurPos);
-					if (hwndUnderCursor != W) {
+					if (hwndUnderCursor == Wm) {
 						IsSelecting = true;
 						StartPoint.x = CurPos.x;
 						StartPoint.y = CurPos.y;
@@ -434,25 +470,37 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 				if (IsSelecting) {
 					IsSelecting = false;
 
-					Selection.left = min(StartPoint.x, EndPoint.x);
-					Selection.top = min(StartPoint.y, EndPoint.y);
-					Selection.right = max(StartPoint.x, EndPoint.x);
-					Selection.bottom = max(StartPoint.y, EndPoint.y);
+					POINT CurPos;
+					GetCursorPos(&CurPos);
+					HWND hwndUnderCursor = WindowFromPoint(CurPos);
 
-					HDC hdcScreen = GetDC(NULL);
-					HDC hdc = CreateCompatibleDC(hdcScreen);
-					HBITMAP Colors = CreateCompatibleBitmap(hdcScreen, Selection.right - Selection.left, Selection.bottom - Selection.top);
-					SelectObject(hdc, Colors);
+					if (hwndUnderCursor == Wm) {
 
-					BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
+						Selection.left = min(StartPoint.x, EndPoint.x);
+						Selection.top = min(StartPoint.y, EndPoint.y);
+						Selection.right = max(StartPoint.x, EndPoint.x);
+						Selection.bottom = max(StartPoint.y, EndPoint.y);
 
-					CopyToClipboard(Colors);
+						if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
+							WR_SnipAndSketch_Cancel();
+							break;
+						}
 
-					DeleteObject(Colors);
-					DeleteDC(hdc);
-					ReleaseDC(NULL, hdcScreen);
+						HDC hdcScreen = GetDC(NULL);
+						HDC hdc = CreateCompatibleDC(hdcScreen);
+						HBITMAP Colors = CreateCompatibleBitmap(hdcScreen, Selection.right - Selection.left, Selection.bottom - Selection.top);
+						SelectObject(hdc, Colors);
 
-					DestroyWindow(W);
+						BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
+
+						CopyToClipboard(Colors);
+
+						DeleteObject(Colors);
+						DeleteDC(hdc);
+						ReleaseDC(NULL, hdcScreen);
+
+						DestroyWindow(W);
+					}
 				}
 				break;
 		}
