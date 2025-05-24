@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <vector>
 #include <Windows.h>
+#include <intrin.h>
 
 bool Created = false;
 
@@ -121,6 +122,88 @@ void CopyToClipboard(HBITMAP Image) {
 	}
 }
 
+void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
+	BYTE alpha = 128;
+
+	HDC hdcMem = CreateCompatibleDC(hdc);
+	HBITMAP hbmMem = CreateCompatibleBitmap(hdc, width, height);
+	HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, hbmMem);
+
+	BitBlt(hdcMem, 0, 0, width, height, hdc, x, y, SRCCOPY);
+
+	BITMAP bm;
+	GetObject(hbmMem, sizeof(BITMAP), &bm);
+
+	BITMAPINFO bmi = { 0 };
+	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.bmiHeader.biWidth = bm.bmWidth;
+	bmi.bmiHeader.biHeight = -bm.bmHeight;
+	bmi.bmiHeader.biPlanes = 1;
+	bmi.bmiHeader.biBitCount = 32;
+	bmi.bmiHeader.biCompression = BI_RGB;
+
+	void* bits;
+	HBITMAP hbmAlpha = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+	if (!hbmAlpha) {
+		SelectObject(hdcMem, hbmOld);
+		DeleteObject(hbmMem);
+		DeleteDC(hdcMem);
+		return;
+	}
+
+	HDC hdcAlpha = CreateCompatibleDC(hdc);
+	HBITMAP hbmOldAlpha = (HBITMAP)SelectObject(hdcAlpha, hbmAlpha);
+
+	BitBlt(hdcAlpha, 0, 0, width, height, hdcMem, 0, 0, SRCCOPY);
+
+	DWORD* pixels = (DWORD*)bits;
+	int pixelCount = bm.bmWidth * bm.bmHeight;
+
+	__m128i fgColor = _mm_set1_epi32(0x00000000);
+	__m128i alphaMask = _mm_set1_epi32(alpha);
+
+	for (int i = 0; i < pixelCount; i += 4) {
+		__m128i bgPixels = _mm_loadu_si128((__m128i*)(pixels + i));
+
+		__m128i bgR = _mm_and_si128(_mm_srli_epi32(bgPixels, 16), _mm_set1_epi32(0x000000FF));
+		__m128i bgG = _mm_and_si128(_mm_srli_epi32(bgPixels, 8), _mm_set1_epi32(0x000000FF));
+		__m128i bgB = _mm_and_si128(bgPixels, _mm_set1_epi32(0x000000FF));
+
+		__m128i blendedR = _mm_add_epi32(
+			_mm_srli_epi32(_mm_mullo_epi16(bgR, alphaMask), 8),
+			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
+		);
+		__m128i blendedG = _mm_add_epi32(
+			_mm_srli_epi32(_mm_mullo_epi16(bgG, alphaMask), 8),
+			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
+		);
+		__m128i blendedB = _mm_add_epi32(
+			_mm_srli_epi32(_mm_mullo_epi16(bgB, alphaMask), 8),
+			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
+		);
+
+		__m128i blendedPixels = _mm_or_si128(
+			_mm_or_si128(
+				_mm_slli_epi32(blendedR, 16),
+				_mm_slli_epi32(blendedG, 8)
+			),
+			blendedB
+		);
+
+		_mm_storeu_si128((__m128i*)(pixels + i), blendedPixels);
+	}
+
+	BitBlt(hdc, x, y, width, height, hdcAlpha, 0, 0, SRCCOPY);
+
+	SelectObject(hdcAlpha, hbmOldAlpha);
+	DeleteObject(hbmAlpha);
+	DeleteDC(hdcAlpha);
+
+	SelectObject(hdcMem, hbmOld);
+	DeleteObject(hbmMem);
+	DeleteDC(hdcMem);
+}
+
 static POINT StartPoint  = { 0,0 };
 static POINT EndPoint    = { 0,0 };
 static bool  IsSelecting = false;
@@ -142,8 +225,6 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			SetWindowPos(W, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 		}
 		break;
-	case WM_ERASEBKGND:
-		return TRUE;
 	case WM_PAINT:
 		{
 			PAINTSTRUCT ps;
@@ -158,19 +239,29 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             DrawScreenshot(hdcBuffer);
 
             if (IsSelecting) {
-                HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
-                HPEN oPen = (HPEN)SelectObject(hdcBuffer, hPen);
+				SetROP2(hdcBuffer, R2_XORPEN);
+				HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+				HPEN oPen = (HPEN)SelectObject(hdcBuffer, hPen);
+				HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
+				HBRUSH oBrush = (HBRUSH)SelectObject(hdcBuffer, hBrush);
 
-                HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
-                HBRUSH oBrush = (HBRUSH)SelectObject(hdcBuffer, hBrush);
+				Rectangle(hdcBuffer, min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1);
 
-                Rectangle(hdcBuffer, min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1);
+				SelectObject(hdcBuffer, oPen);
+				SelectObject(hdcBuffer, oBrush);
+				DeleteObject(hPen);
+				SetROP2(hdcBuffer, R2_COPYPEN);
 
-                SelectObject(hdcBuffer, oPen);
-                SelectObject(hdcBuffer, oBrush);
+				RECT rcOutside = ps.rcPaint;
+				RECT rcInside = { min(StartPoint.x, EndPoint.x) - 1, min(StartPoint.y, EndPoint.y) - 1, max(StartPoint.x, EndPoint.x) + 1, max(StartPoint.y, EndPoint.y) + 1 };
 
-                DeleteObject(hPen);
-            }
+				DrawSemiTransparentRect(hdcBuffer, rcOutside.left , rcOutside.top   , rcInside .left  - rcOutside.left , rcOutside.bottom - rcOutside.top   );
+				DrawSemiTransparentRect(hdcBuffer, rcInside .right, rcOutside.top   , rcOutside.right - rcInside .right, rcOutside.bottom - rcOutside.top   );
+				DrawSemiTransparentRect(hdcBuffer, rcInside .left , rcOutside.top   , rcInside .right - rcInside .left , rcInside .top    - rcOutside.top   );
+				DrawSemiTransparentRect(hdcBuffer, rcInside .left , rcInside .bottom, rcInside .right - rcInside .left , rcOutside.bottom - rcInside .bottom);
+			} else {
+				DrawSemiTransparentRect(hdcBuffer, 0, 0, ps.rcPaint.right, ps.rcPaint.bottom);
+			}
 
             BitBlt(hdc, 0, 0, ps.rcPaint.right, ps.rcPaint.bottom, hdcBuffer, 0, 0, SRCCOPY);
 

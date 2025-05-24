@@ -6,7 +6,7 @@
 #include "WR_Recorder.h"
 #include "WR_SnipAndSketch.h"
 
-const bool TestKeys = true;
+const bool TestKeys = false;
 
 HHOOK MouseHook;
 
@@ -65,6 +65,8 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 void StartDetect() {
+	if (TestKeys) { std::cout << "Enabled TestKeys!" << std::endl; }
+
 	KeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
 	if (KeyboardHook == NULL) { throw std::exception("KeyboardHook failed to set!"); }
 

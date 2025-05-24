@@ -4,7 +4,10 @@
 
 #include "Detector.h"
 
+const std::string Version = "0.0";
+
 static void Start() {
+	std::cout << "WoowzRecorder " << Version << std::endl;
 	StartDetect();
 }
 
