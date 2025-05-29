@@ -34,41 +34,43 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 					PressedKeys.find(VK_LWIN) != PressedKeys.end() &&
 					PressedKeys.find(0x53) != PressedKeys.end()
 					) {
-					WRSTART_SnipAndSketch();
+					if (WRSTART_SnipAndSketch()) { return 1; }
 				}
 
 				if ( // LALT + Z
 					PressedKeys.find(VK_LMENU) != PressedKeys.end() &&
 					PressedKeys.find(0x5A) != PressedKeys.end()
 					) {
-					WRSTART_Recorder();
+					if (WRSTART_Recorder()) { return 1; }
 				}
 			}
 			else {
 				if (Key->vkCode == VK_F1) {
-					WRSTART_SnipAndSketch();
+					if (WRSTART_SnipAndSketch()) { return 1; }
 				}
 
 				if (Key->vkCode == VK_F2) {
-					WRSTART_Recorder();
+					if (WRSTART_Recorder()) { return 1; }
 				}
 			}
 
 			if (Key->vkCode == VK_ESCAPE) {
-				WR_SnipAndSketch_Cancel();
+				if (WR_SnipAndSketch_Cancel()) { return 1; }
 			}
 
 			if (Key->vkCode == VK_LWIN || Key->vkCode == VK_SPACE) {
-				WREND_SnipAndSketch();
+				if (WREND_SnipAndSketch()) { return 1; }
 			}
 
-			if ( // W + R
-				PressedKeys.find(0x57) != PressedKeys.end() &&
-				PressedKeys.find(0x52) != PressedKeys.end()
+			if ( // LALT + W + R
+				PressedKeys.find(VK_LMENU) != PressedKeys.end() &&
+				PressedKeys.find(0x57    ) != PressedKeys.end() &&
+				PressedKeys.find(0x52    ) != PressedKeys.end()
 				) {
 				HWND ConsoleWindow = GetConsoleWindow();
 				ConsoleVisible = !ConsoleVisible;
 				ShowWindow(ConsoleWindow, ConsoleVisible ? SW_SHOW : SW_HIDE);
+				return 1;
 			}
 		}
 		else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {

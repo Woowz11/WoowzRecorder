@@ -1,9 +1,9 @@
 #ifndef WR_SNIP_AND_SKETCH_H
 #define WR_SNIP_AND_SKETCH_H
 
-void WRSTART_SnipAndSketch();
-void WREND_SnipAndSketch();
+bool WRSTART_SnipAndSketch();
+bool WREND_SnipAndSketch();
 void WR_SnipAndSketch_MousePress(WPARAM wParam, LPARAM lParam);
-void WR_SnipAndSketch_Cancel();
+bool WR_SnipAndSketch_Cancel();
 
 #endif // WR_SNIP_AND_SKETCH_H

@@ -1,5 +1,7 @@
 #include <iostream>
 
-void WRSTART_Recorder() {
+bool WRSTART_Recorder() {
 	std::cout << "START 'Recorder'" << std::endl;
+
+	return true;
 }

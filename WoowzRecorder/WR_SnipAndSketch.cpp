@@ -84,7 +84,7 @@ void CreateShot() {
 	}
 
 	HWND hwnd = CreateWindowEx(
-		WS_EX_TOPMOST,
+		WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
 		CLASS_NAME,
 		L"",
 		WS_POPUP,
@@ -430,14 +430,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 //==========================================================================================================
 
-void WR_SnipAndSketch_Cancel() {
+bool WR_SnipAndSketch_Cancel() {
 	if (Created) {
 		if (IsSelecting) {
 			IsSelecting = false;
 			ShowWindow(W, SW_SHOW);
 			InvalidateRect(Wm, NULL, TRUE);
+			return true;
+		} else {
+			bool HasWindow = W != NULL;
+			DestroyWindow(W);
+			if (HasWindow) { return true; }
 		}
 	}
+	return false;
 }
 
 void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
@@ -487,8 +493,7 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 						Selection.bottom = max(StartPoint.y, EndPoint.y);
 
 						if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
-							ShowWindow(W, SW_SHOW);
-							InvalidateRect(Wm, NULL, TRUE);
+							DestroyWindow(W);
 							break;
 						}
 
@@ -516,25 +521,32 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 
 //==========================================================================================================
 
-void WREND_SnipAndSketch() {
+bool WREND_SnipAndSketch() {
 	if (Created) {
+		bool HasWindow = W != NULL;
 		DestroyWindow(W);
+		if (HasWindow) { return true; }
 	}
+	return false;
 }
 
-void WRSTART_SnipAndSketch() {
+bool WRSTART_SnipAndSketch() {
 	try {
 		if (!Created) {
 			std::cout << "START 'SnipAndSketch'" << std::endl;
 			CreateWindow_();
 			CreateShot();
 			ScreenshotToWindow();
+			return true;
 		}
 		else {
+			bool HasWindow = W != NULL;
 			DestroyWindow(W);
+			if (HasWindow) { return true; }
 		}
 	}
 	catch (std::exception e) {
 		std::cerr << "Error SnipAndSketch: " << e.what() << std::endl;
 	}
+	return false;
 }
