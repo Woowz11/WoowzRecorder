@@ -215,6 +215,7 @@ void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
 	DeleteDC(hdcMem);
 }
 
+bool DoSkinAndSketch = false;
 LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static HDC hdcBuffer = NULL;
 	static HBITMAP hbmBuffer = NULL;
@@ -245,7 +246,9 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
             DrawScreenshot(hdcBuffer);
 
-            if (IsSelecting) {
+			if (DoSkinAndSketch) {
+				DoSkinAndSketch = false;
+			} else if (IsSelecting) {
 				SetROP2(hdcBuffer, R2_XORPEN);
 				HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
 				HPEN oPen = (HPEN)SelectObject(hdcBuffer, hPen);
@@ -480,6 +483,7 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 			case WM_LBUTTONUP:
 				if (IsSelecting) {
 					IsSelecting = false;
+					DoSkinAndSketch = true;
 
 					POINT CurPos;
 					GetCursorPos(&CurPos);
@@ -496,6 +500,8 @@ void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 							DestroyWindow(W);
 							break;
 						}
+
+						UpdateWindow(Wm);
 
 						HDC hdcScreen = GetDC(NULL);
 						HDC hdc = CreateCompatibleDC(hdcScreen);
