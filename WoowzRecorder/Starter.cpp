@@ -42,6 +42,7 @@ static void Start() {
 	SetConsoleCtrlHandler(ConsoleHandler, TRUE);
 
 	HWND ConsoleWindow = GetConsoleWindow();
+	ShowWindow(ConsoleWindow, SW_HIDE);
 
 	std::cout << "WoowzRecorder " << Version << std::endl;
 	StartDetect();
