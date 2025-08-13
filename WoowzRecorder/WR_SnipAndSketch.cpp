@@ -145,6 +145,8 @@ void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
 	BITMAP bm;
 	GetObject(hbmMem, sizeof(BITMAP), &bm);
 
+		std::vector<DWORD> pixels(bm.bmWidth * bm.bmHeight);
+
 	BITMAPINFO bmi = { 0 };
 	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bmi.bmiHeader.biWidth = bm.bmWidth;
@@ -153,62 +155,28 @@ void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
 	bmi.bmiHeader.biBitCount = 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
-	void* bits;
-	HBITMAP hbmAlpha = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-	if (!hbmAlpha) {
-		SelectObject(hdcMem, hbmOld);
-		DeleteObject(hbmMem);
-		DeleteDC(hdcMem);
-		return;
+	GetDIBits(hdcMem, hbmMem, 0, bm.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
+
+	DWORD alphaMask = alpha;
+	for (auto& px : pixels) {
+		DWORD r = (px >> 16) & 0xFF;
+		DWORD g = (px >> 8) & 0xFF;
+		DWORD b = px & 0xFF;
+
+		r = (r * alphaMask) >> 8;
+		g = (g * alphaMask) >> 8;
+		b = (b * alphaMask) >> 8;
+
+		px = (r << 16) | (g << 8) | b;
 	}
 
-	HDC hdcAlpha = CreateCompatibleDC(hdc);
-	HBITMAP hbmOldAlpha = (HBITMAP)SelectObject(hdcAlpha, hbmAlpha);
+	SetDIBits(hdcMem, hbmMem, 0, bm.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
 
-	BitBlt(hdcAlpha, 0, 0, width, height, hdcMem, 0, 0, SRCCOPY);
+	BitBlt(hdc, x, y, width, height, hdcMem, 0, 0, SRCCOPY);
 
-	DWORD* pixels = (DWORD*)bits;
-	int pixelCount = bm.bmWidth * bm.bmHeight;
-
-	__m128i fgColor = _mm_set1_epi32(0x00000000);
-	__m128i alphaMask = _mm_set1_epi32(alpha);
-
-	for (int i = 0; i < pixelCount; i += 4) {
-		__m128i bgPixels = _mm_loadu_si128((__m128i*)(pixels + i));
-
-		__m128i bgR = _mm_and_si128(_mm_srli_epi32(bgPixels, 16), _mm_set1_epi32(0x000000FF));
-		__m128i bgG = _mm_and_si128(_mm_srli_epi32(bgPixels, 8), _mm_set1_epi32(0x000000FF));
-		__m128i bgB = _mm_and_si128(bgPixels, _mm_set1_epi32(0x000000FF));
-
-		__m128i blendedR = _mm_add_epi32(
-			_mm_srli_epi32(_mm_mullo_epi16(bgR, alphaMask), 8),
-			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
-		);
-		__m128i blendedG = _mm_add_epi32(
-			_mm_srli_epi32(_mm_mullo_epi16(bgG, alphaMask), 8),
-			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
-		);
-		__m128i blendedB = _mm_add_epi32(
-			_mm_srli_epi32(_mm_mullo_epi16(bgB, alphaMask), 8),
-			_mm_srli_epi32(_mm_mullo_epi16(_mm_set1_epi32(0), _mm_sub_epi32(_mm_set1_epi32(255), alphaMask)), 8)
-		);
-
-		__m128i blendedPixels = _mm_or_si128(
-			_mm_or_si128(
-				_mm_slli_epi32(blendedR, 16),
-				_mm_slli_epi32(blendedG, 8)
-			),
-			blendedB
-		);
-
-		_mm_storeu_si128((__m128i*)(pixels + i), blendedPixels);
-	}
-
-	BitBlt(hdc, x, y, width, height, hdcAlpha, 0, 0, SRCCOPY);
-
-	SelectObject(hdcAlpha, hbmOldAlpha);
-	DeleteObject(hbmAlpha);
-	DeleteDC(hdcAlpha);
+	SelectObject(hdcMem, hbmOld);
+	DeleteObject(hbmMem);
+	DeleteDC(hdcMem);
 
 	SelectObject(hdcMem, hbmOld);
 	DeleteObject(hbmMem);
@@ -249,7 +217,7 @@ LRESULT CALLBACK WindowProc_Monitors(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			if (DoSkinAndSketch) {
 				DoSkinAndSketch = false;
 			} else if (IsSelecting) {
-				SetROP2(hdcBuffer, R2_XORPEN);
+				SetROP2(hdcBuffer, R2_NOT);
 				HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
 				HPEN oPen = (HPEN)SelectObject(hdcBuffer, hPen);
 				HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
@@ -449,80 +417,84 @@ bool WR_SnipAndSketch_Cancel() {
 	return false;
 }
 
-void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
-	if (Created) {
-		MOUSEHOOKSTRUCT* i = (MOUSEHOOKSTRUCT*)l;
+bool WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
+	if (!Created) { return false; }
 
-		switch (w)
+	MOUSEHOOKSTRUCT* i = (MOUSEHOOKSTRUCT*)l;
+
+	switch (w)
+	{
+		case WM_LBUTTONDOWN:
 		{
-			case WM_LBUTTONDOWN:
-				{
-					POINT CurPos;
-					GetCursorPos(&CurPos);
-					HWND hwndUnderCursor = WindowFromPoint(CurPos);
-					if (hwndUnderCursor == Wm) {
-						IsSelecting = true;
-						StartPoint.x = CurPos.x;
-						StartPoint.y = CurPos.y;
-						EndPoint = StartPoint;
+			POINT CurPos;
+			GetCursorPos(&CurPos);
+			HWND hwndUnderCursor = WindowFromPoint(CurPos);
+			if (hwndUnderCursor == Wm) {
+				IsSelecting = true;
+				StartPoint.x = CurPos.x;
+				StartPoint.y = CurPos.y;
+				EndPoint = StartPoint;
 
-						ShowWindow(W, SW_HIDE);
-					}
-				}
-				break;
-			case WM_MOUSEMOVE:
-				if (IsSelecting) {
-					POINT CurPos;
-					GetCursorPos(&CurPos);
-					EndPoint.x = CurPos.x;
-					EndPoint.y = CurPos.y;
-
-					InvalidateRect(Wm, NULL, FALSE);
-				}
-				break;
-			case WM_LBUTTONUP:
-				if (IsSelecting) {
-					IsSelecting = false;
-					DoSkinAndSketch = true;
-
-					POINT CurPos;
-					GetCursorPos(&CurPos);
-					HWND hwndUnderCursor = WindowFromPoint(CurPos);
-
-					if (hwndUnderCursor == Wm) {
-
-						Selection.left = min(StartPoint.x, EndPoint.x);
-						Selection.top = min(StartPoint.y, EndPoint.y);
-						Selection.right = max(StartPoint.x, EndPoint.x);
-						Selection.bottom = max(StartPoint.y, EndPoint.y);
-
-						if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
-							DestroyWindow(W);
-							break;
-						}
-
-						UpdateWindow(Wm);
-
-						HDC hdcScreen = GetDC(NULL);
-						HDC hdc = CreateCompatibleDC(hdcScreen);
-						HBITMAP Colors = CreateCompatibleBitmap(hdcScreen, Selection.right - Selection.left, Selection.bottom - Selection.top);
-						SelectObject(hdc, Colors);
-
-						BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
-
-						CopyToClipboard(Colors);
-						std::cout << "Copied!" << std::endl;
-
-						DeleteObject(Colors);
-						DeleteDC(hdc);
-						ReleaseDC(NULL, hdcScreen);
-
-						DestroyWindow(W);
-					}
-				}
-				break;
+				ShowWindow(W, SW_HIDE);
+				return true;
+			}
 		}
+		break;
+		case WM_MOUSEMOVE:
+		if (IsSelecting) {
+			POINT CurPos;
+			GetCursorPos(&CurPos);
+			EndPoint.x = CurPos.x;
+			EndPoint.y = CurPos.y;
+
+			InvalidateRect(Wm, NULL, FALSE);
+		}
+		break;
+		case WM_LBUTTONUP:
+		if (IsSelecting) {
+			IsSelecting = false;
+			DoSkinAndSketch = true;
+
+			POINT CurPos;
+			GetCursorPos(&CurPos);
+			HWND hwndUnderCursor = WindowFromPoint(CurPos);
+
+			if (hwndUnderCursor == Wm) {
+
+				Selection.left = min(StartPoint.x, EndPoint.x);
+				Selection.top = min(StartPoint.y, EndPoint.y);
+				Selection.right = max(StartPoint.x, EndPoint.x);
+				Selection.bottom = max(StartPoint.y, EndPoint.y);
+
+				if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
+					DestroyWindow(W);
+					return true;
+				}
+
+				UpdateWindow(Wm);
+
+				HDC hdcScreen = GetDC(NULL);
+				HDC hdc = CreateCompatibleDC(hdcScreen);
+				HBITMAP Colors = CreateCompatibleBitmap(hdcScreen, Selection.right - Selection.left, Selection.bottom - Selection.top);
+				SelectObject(hdc, Colors);
+
+				BitBlt(hdc, 0, 0, Selection.right - Selection.left, Selection.bottom - Selection.top, hdcScreen, Selection.left, Selection.top, SRCCOPY);
+
+				CopyToClipboard(Colors);
+				std::cout << "Copied!" << std::endl;
+
+				DeleteObject(Colors);
+				DeleteDC(hdc);
+				ReleaseDC(NULL, hdcScreen);
+
+				DestroyWindow(W);
+				return true;
+			}
+		}
+		break;
 	}
+
+	return false;
 }
 
 //==========================================================================================================
@@ -551,8 +523,9 @@ bool WRSTART_SnipAndSketch() {
 			if (HasWindow) { return true; }
 		}
 	}
-	catch (std::exception e) {
+	catch (std::runtime_error e) {
 		std::cerr << "Error SnipAndSketch: " << e.what() << std::endl;
+		throw std::runtime_error("Error with SnipAndSketch");
 	}
 	return false;
 }

@@ -3,7 +3,7 @@
 
 bool WRSTART_SnipAndSketch();
 bool WREND_SnipAndSketch();
-void WR_SnipAndSketch_MousePress(WPARAM wParam, LPARAM lParam);
+bool WR_SnipAndSketch_MousePress(WPARAM wParam, LPARAM lParam);
 bool WR_SnipAndSketch_Cancel();
 
 #endif // WR_SNIP_AND_SKETCH_H
