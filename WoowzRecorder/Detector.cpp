@@ -74,9 +74,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 HHOOK MouseHook = NULL;
 LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode >= 0) {
-        if (WR_SnipAndSketch_MousePress(wParam, lParam)) { return 1; };
-    }
+    if (nCode >= 0) { WR_SnipAndSketch_MousePress(wParam, lParam); }
 
     return CallNextHookEx(MouseHook, nCode, wParam, lParam);
 }

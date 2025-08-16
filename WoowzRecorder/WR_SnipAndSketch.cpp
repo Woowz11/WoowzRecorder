@@ -6,6 +6,8 @@
 #include <Windows.h>
 #include <intrin.h>
 
+#pragma comment(lib, "Msimg32.lib")
+
 bool Created = false;
 
 HWND W;
@@ -134,49 +136,22 @@ void CopyToClipboard(HBITMAP Image) {
 }
 
 void DrawSemiTransparentRect(HDC hdc, int x, int y, int width, int height) {
-	BYTE alpha = 128;
-
 	HDC hdcMem = CreateCompatibleDC(hdc);
 	HBITMAP hbmMem = CreateCompatibleBitmap(hdc, width, height);
 	HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, hbmMem);
 
-	BitBlt(hdcMem, 0, 0, width, height, hdc, x, y, SRCCOPY);
+	HBRUSH hBrush = CreateSolidBrush(RGB(0, 0, 0));
+	RECT rc = { 0, 0, width, height };
+	FillRect(hdcMem, &rc, hBrush);
+	DeleteObject(hBrush);
 
-	BITMAP bm;
-	GetObject(hbmMem, sizeof(BITMAP), &bm);
+	BLENDFUNCTION bf;
+	bf.BlendOp = AC_SRC_OVER;
+	bf.BlendFlags = 0;
+	bf.SourceConstantAlpha = 128;
+	bf.AlphaFormat = 0;
 
-		std::vector<DWORD> pixels(bm.bmWidth * bm.bmHeight);
-
-	BITMAPINFO bmi = { 0 };
-	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.bmiHeader.biWidth = bm.bmWidth;
-	bmi.bmiHeader.biHeight = -bm.bmHeight;
-	bmi.bmiHeader.biPlanes = 1;
-	bmi.bmiHeader.biBitCount = 32;
-	bmi.bmiHeader.biCompression = BI_RGB;
-
-	GetDIBits(hdcMem, hbmMem, 0, bm.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
-
-	DWORD alphaMask = alpha;
-	for (auto& px : pixels) {
-		DWORD r = (px >> 16) & 0xFF;
-		DWORD g = (px >> 8) & 0xFF;
-		DWORD b = px & 0xFF;
-
-		r = (r * alphaMask) >> 8;
-		g = (g * alphaMask) >> 8;
-		b = (b * alphaMask) >> 8;
-
-		px = (r << 16) | (g << 8) | b;
-	}
-
-	SetDIBits(hdcMem, hbmMem, 0, bm.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
-
-	BitBlt(hdc, x, y, width, height, hdcMem, 0, 0, SRCCOPY);
-
-	SelectObject(hdcMem, hbmOld);
-	DeleteObject(hbmMem);
-	DeleteDC(hdcMem);
+	AlphaBlend(hdc, x, y, width, height, hdcMem, 0, 0, width, height, bf);
 
 	SelectObject(hdcMem, hbmOld);
 	DeleteObject(hbmMem);
@@ -417,8 +392,8 @@ bool WR_SnipAndSketch_Cancel() {
 	return false;
 }
 
-bool WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
-	if (!Created) { return false; }
+void WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
+	if (!Created) { return; }
 
 	MOUSEHOOKSTRUCT* i = (MOUSEHOOKSTRUCT*)l;
 
@@ -436,7 +411,6 @@ bool WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 				EndPoint = StartPoint;
 
 				ShowWindow(W, SW_HIDE);
-				return true;
 			}
 		}
 		break;
@@ -468,7 +442,7 @@ bool WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 
 				if ((Selection.right - Selection.left) <= 5 || (Selection.bottom - Selection.top) <= 5) {
 					DestroyWindow(W);
-					return true;
+					break;
 				}
 
 				UpdateWindow(Wm);
@@ -488,13 +462,10 @@ bool WR_SnipAndSketch_MousePress(WPARAM w, LPARAM l) {
 				ReleaseDC(NULL, hdcScreen);
 
 				DestroyWindow(W);
-				return true;
 			}
 		}
 		break;
 	}
-
-	return false;
 }
 
 //==========================================================================================================
